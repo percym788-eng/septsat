@@ -1,0 +1,17 @@
+{
+  "name": "sat-helper-mac-auth",
+  "version": "1.0.0",
+  "description": "SAT Helper with MAC Address Authentication",
+  "main": "sat-launcher-mac.cjs",
+  "scripts": {
+    "start": "node sat-launcher-mac.cjs",
+    "admin": "node sat-launcher-mac.cjs admin",
+    "setup": "node scripts/setup-admin.js"
+  },
+  "dependencies": {
+    "@vercel/kv": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
