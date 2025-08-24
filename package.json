@@ -2,10 +2,11 @@
   "name": "sat-helper-mac-auth",
   "version": "1.0.0",
   "description": "SAT Helper with MAC Address Authentication",
-  "main": "sat-launcher-mac.cjs",
+  "type": "module",
+  "main": "sat-launcher-mac.js",
   "scripts": {
-    "start": "node sat-launcher-mac.cjs",
-    "admin": "node sat-launcher-mac.cjs admin",
+    "start": "node sat-launcher-mac.js",
+    "admin": "node sat-launcher-mac.js admin",
     "setup": "node scripts/setup-admin.js"
   },
   "dependencies": {
