@@ -3,10 +3,5 @@
     "api/mac-auth.js": {
       "maxDuration": 10
     }
-  },
-  "env": {
-    "ADMIN_SECRET_KEY": "@admin-secret-key",
-    "KV_REST_API_URL": "@kv-rest-api-url", 
-    "KV_REST_API_TOKEN": "@kv-rest-api-token"
   }
 }
