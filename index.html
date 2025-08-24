@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAT Helper - MAC Authentication System</title>
+    <title>SAT Helper - MAC Authentication System - nigga i gpt'd this page ngl</title>
     <style>
         * {
             margin: 0;
@@ -114,14 +114,6 @@
             transform: translateY(-3px);
         }
         
-        .admin-section {
-            background: linear-gradient(135deg, #dc3545, #fd7e14);
-            color: white;
-            padding: 30px;
-            border-radius: 15px;
-            margin: 30px 0;
-        }
-        
         .status {
             display: inline-block;
             background: #28a745;
@@ -198,29 +190,23 @@
             </div>
             
             <div class="feature">
-                <span class="feature-icon">👑</span>
-                <h3>Easy Management</h3>
-                <p>Simple admin panel for adding/removing authorized devices. No complex user management needed.</p>
+                <span class="feature-icon">🎯</span>
+                <h3>Simple & Reliable</h3>
+                <p>No user accounts needed. Just run the client and get instant access if your device is authorized.</p>
             </div>
         </div>
         
         <div class="download-section">
-            <h2>📱 For Users</h2>
+            <h2>📱 Get Access</h2>
             <p>Download the client and get instant access if your device is authorized:</p>
-            <a href="#" class="download-btn" onclick="showUserInstructions()">📥 Get Access Instructions</a>
-        </div>
-        
-        <div class="admin-section">
-            <h2>👑 For Administrators</h2>
-            <p>Manage authorized devices and view system statistics:</p>
-            <a href="#" class="download-btn" onclick="showAdminInstructions()">🛠️ Admin Instructions</a>
+            <a href="#" class="download-btn" onclick="showUserInstructions()">📥 Access Instructions</a>
         </div>
         
         <div class="api-info">
             <strong>🌐 API Status:</strong> Ready<br>
             <strong>🔧 Version:</strong> 1.0.0<br>
             <strong>📊 Authentication:</strong> MAC Address Whitelist<br>
-            <strong>⚙️ Admin Key:</strong> Configured (122316)
+            <strong>⚙️ System:</strong> Online
         </div>
         
         <div class="warning">
@@ -240,26 +226,10 @@
 1. Download: sat-launcher-mac.cjs
 2. Run: node sat-launcher-mac.cjs
 3. If authorized: SAT Helper launches automatically!
-4. If not authorized: Send displayed MAC addresses to admin
+4. If not authorized: Send displayed MAC addresses to administrator
 
 📱 Your MAC addresses will be shown if access is denied.
 Contact the administrator to get whitelisted.`);
-        }
-        
-        function showAdminInstructions() {
-            alert(`👑 ADMIN INSTRUCTIONS:
-
-1. Download: sat-launcher-mac.cjs
-2. Run: node sat-launcher-mac.cjs admin
-3. Use admin key: 122316
-4. Choose options:
-   • Add MAC address
-   • Remove MAC address  
-   • View all authorized devices
-   • Add current device (recommended first step)
-
-🔑 Admin Key: 122316
-Keep this secret and secure!`);
         }
 
         // Add some interactive elements
@@ -283,7 +253,6 @@ Keep this secret and secure!`);
 
             console.log('🎓 SAT Helper MAC Authentication System');
             console.log('🌐 API Endpoint: /api/mac-auth');
-            console.log('🔑 Admin Key: 122316');
             console.log('📱 Ready for MAC address authentication');
         });
     </script>
