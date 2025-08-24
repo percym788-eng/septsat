@@ -6,9 +6,12 @@
   "scripts": {
     "start": "node sat-launcher-mac.cjs",
     "admin": "node sat-launcher-mac.cjs admin",
-    "test": "node test-system.js"
+    "setup": "node scripts/setup-admin.js"
   },
-  "keywords": ["sat-helper", "mac-authentication", "security"],
-  "author": "Your Name",
-  "license": "MIT"
+  "dependencies": {
+    "@vercel/kv": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
 }
