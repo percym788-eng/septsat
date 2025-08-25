@@ -1,49 +1,65 @@
 {
-  "name": "septsat-mac-auth",
-  "version": "1.0.0",
-  "description": "MAC Address Authentication System with Custom Database",
-  "main": "auth-mac.js",
+  "name": "septsat-database",
+  "version": "2.0.0",
+  "description": "SAT Helper with custom MAC address authentication database",
+  "main": "sat-launcher-mac.js",
+  "type": "module",
   "scripts": {
-    "start": "node auth-mac.js",
-    "admin": "node mac-admin.js",
-    "test": "node -e \"const auth = require('./auth-mac'); new auth().quickAuth();\"",
-    "backup": "node -e \"const auth = require('./auth-mac'); new auth().backupDatabase().then(r => console.log('Backup:', r));\"",
-    "stats": "node -e \"const auth = require('./auth-mac'); new auth().getAuthStats().then(r => console.log(JSON.stringify(r.stats, null, 2)));\""
-  },
-  "bin": {
-    "mac-admin": "./mac-admin.js",
-    "mac-auth": "./auth-mac.js"
+    "start": "node sat-launcher-mac.js",
+    "admin": "node sat-launcher-mac.js admin",
+    "dev": "NODE_ENV=development node sat-launcher-mac.js",
+    "build": "echo 'No build step required'",
+    "maintenance": "node scripts/db-maintenance.js",
+    "backup": "node scripts/db-backup.js",
+    "test": "echo 'Tests not implemented yet'"
   },
   "keywords": [
-    "mac-address",
-    "authentication",
-    "security",
-    "database",
-    "authorization"
+    "sat",
+    "education",
+    "automation",
+    "mac-authentication",
+    "database"
   ],
-  "author": "percym788-eng",
+  "author": "Your Name",
   "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.15.0",
+    "fs-extra": "^11.2.0",
+    "https": "^1.0.0",
+    "node-global-key-listener": "^0.1.2",
+    "robotjs": "^0.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  },
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=18.0.0"
   },
-  "directories": {
-    "lib": "./",
-    "test": "./tests",
-    "doc": "./docs"
-  },
-  "files": [
-    "auth-mac.js",
-    "macdb.js",
-    "mac-admin.js",
-    "examples/",
-    "README.md"
-  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/percym788-eng/septsat.git"
   },
-  "bugs": {
-    "url": "https://github.com/percym788-eng/septsat/issues"
-  },
-  "homepage": "https://github.com/percym788-eng/septsat#readme"
+  "homepage": "https://github.com/percym788-eng/septsat",
+  "files": [
+    "sat-launcher-mac.js",
+    "sept-sat-helper.js",
+    "mac-database.js",
+    "database-config.js",
+    "pages/",
+    "api/",
+    "data/",
+    "scripts/",
+    "config.js",
+    "admin-config.js",
+    "README.md"
+  ],
+  "os": [
+    "darwin",
+    "win32",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
 }
