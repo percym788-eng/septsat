@@ -26,7 +26,7 @@
     "@google/generative-ai": "^0.15.0",
     "fs-extra": "^11.2.0",
     "https": "^1.0.0",
-    "node-global-key-listener": "^0.3.0",  // Updated per npm registry
+    "node-global-key-listener": "^0.3.0",
     "robotjs": "^0.6.0"
   },
   "devDependencies": {
