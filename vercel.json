@@ -10,10 +10,7 @@
     }
   },
   "env": {
-    "NODE_ENV": "production",
-    "ADMIN_SECRET_KEY": "@admin-secret-key",
-    "DATABASE_ENCRYPTION_KEY": "@database-encryption-key",
-    "GEMINI_API_KEY": "@gemini-api-key"
+    "NODE_ENV": "production"
   },
   "cleanUrls": true,
   "trailingSlash": false,
