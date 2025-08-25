@@ -1,30 +1,49 @@
 {
-  "name": "septsat-server",
-  "version": "2.0.0",
-  "description": "SAT Helper MAC Authentication Server with Supabase PostgreSQL",
-  "main": "api/mac-auth.js",
-  "type": "module",
+  "name": "septsat-mac-auth",
+  "version": "1.0.0",
+  "description": "MAC Address Authentication System with Custom Database",
+  "main": "auth-mac.js",
   "scripts": {
-    "dev": "vercel dev",
-    "build": "echo 'No build step required'",
-    "start": "echo 'Use vercel dev for local development'"
+    "start": "node auth-mac.js",
+    "admin": "node mac-admin.js",
+    "test": "node -e \"const auth = require('./auth-mac'); new auth().quickAuth();\"",
+    "backup": "node -e \"const auth = require('./auth-mac'); new auth().backupDatabase().then(r => console.log('Backup:', r));\"",
+    "stats": "node -e \"const auth = require('./auth-mac'); new auth().getAuthStats().then(r => console.log(JSON.stringify(r.stats, null, 2)));\""
   },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.39.0"
+  "bin": {
+    "mac-admin": "./mac-admin.js",
+    "mac-auth": "./auth-mac.js"
   },
-  "devDependencies": {
-    "vercel": "^32.0.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
+  "keywords": [
+    "mac-address",
+    "authentication",
+    "security",
+    "database",
+    "authorization"
+  ],
   "author": "percym788-eng",
   "license": "MIT",
-  "keywords": [
-    "sat-helper",
-    "mac-authentication",
-    "vercel",
-    "serverless",
-    "supabase"
-  ]
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "directories": {
+    "lib": "./",
+    "test": "./tests",
+    "doc": "./docs"
+  },
+  "files": [
+    "auth-mac.js",
+    "macdb.js",
+    "mac-admin.js",
+    "examples/",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/percym788-eng/septsat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/percym788-eng/septsat/issues"
+  },
+  "homepage": "https://github.com/percym788-eng/septsat#readme"
 }
