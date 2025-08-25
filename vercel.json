@@ -1,17 +1,6 @@
 {
   "version": 2,
   "name": "septsat-database",
-  "functions": {
-    "pages/api/**/*.js": {
-      "maxDuration": 30
-    },
-    "api/**/*.js": {
-      "maxDuration": 30
-    }
-  },
-  "env": {
-    "NODE_ENV": "production"
-  },
   "cleanUrls": true,
   "trailingSlash": false,
   "regions": ["iad1"],
