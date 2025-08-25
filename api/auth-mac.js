@@ -1,334 +1,293 @@
-const MacDatabase = require('./macdb');
-const os = require('os');
-const { exec } = require('child_process');
-const { promisify } = require('util');
+// pages/api/mac-auth.js or api/mac-auth/route.js - MAC Authentication API Handler
+import MACDatabase from '../../mac-database.js';
+import crypto from 'crypto';
 
-const execAsync = promisify(exec);
+// Initialize database
+const macDB = new MACDatabase();
 
-class MacAuth {
-    constructor(dbPath) {
-        this.db = new MacDatabase(dbPath);
-        this.platform = os.platform();
+// Admin authentication helper
+function verifyAdminKey(adminKey, requiredKey) {
+    if (!adminKey || !requiredKey) {
+        return false;
     }
+    return adminKey === requiredKey;
+}
 
-    // Get MAC address of the current machine
-    async getCurrentMacAddress() {
-        try {
-            const networkInterfaces = os.networkInterfaces();
-            
-            // Find the first non-internal network interface
-            for (const [name, interfaces] of Object.entries(networkInterfaces)) {
-                for (const interface of interfaces) {
-                    if (!interface.internal && interface.mac && interface.mac !== '00:00:00:00:00:00') {
-                        return {
-                            success: true,
-                            macAddress: interface.mac,
-                            interface: name,
-                            family: interface.family
-                        };
-                    }
-                }
-            }
-            
-            return { success: false, error: 'No valid MAC address found' };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+// Request validation helper
+function validateMACAddress(macAddress) {
+    const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+    return macRegex.test(macAddress);
+}
+
+// Rate limiting helper (simple in-memory store)
+const rateLimitStore = new Map();
+const RATE_LIMIT = 60; // requests per hour
+const RATE_LIMIT_WINDOW = 60 * 60 * 1000; // 1 hour in milliseconds
+
+function checkRateLimit(identifier) {
+    const now = Date.now();
+    const key = identifier;
+    
+    if (!rateLimitStore.has(key)) {
+        rateLimitStore.set(key, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+        return true;
     }
-
-    // Get MAC address using system commands (alternative method)
-    async getMacAddressFromSystem() {
-        try {
-            let command;
-            
-            switch (this.platform) {
-                case 'win32':
-                    command = 'getmac /v /fo csv | findstr /V "N/A"';
-                    break;
-                case 'darwin':
-                    command = "ifconfig | grep ether | head -1 | awk '{print $2}'";
-                    break;
-                case 'linux':
-                    command = "ip link show | grep ether | head -1 | awk '{print $2}'";
-                    break;
-                default:
-                    throw new Error('Unsupported platform');
-            }
-
-            const { stdout } = await execAsync(command);
-            const macAddress = this.extractMacFromOutput(stdout, this.platform);
-            
-            return {
-                success: true,
-                macAddress: macAddress,
-                method: 'system_command',
-                platform: this.platform
-            };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
+    
+    const entry = rateLimitStore.get(key);
+    
+    if (now > entry.resetTime) {
+        // Reset the counter
+        entry.count = 1;
+        entry.resetTime = now + RATE_LIMIT_WINDOW;
+        return true;
     }
-
-    // Extract MAC address from system command output
-    extractMacFromOutput(output, platform) {
-        switch (platform) {
-            case 'win32':
-                const lines = output.split('\n');
-                for (const line of lines) {
-                    const match = line.match(/([0-9A-F]{2}-){5}[0-9A-F]{2}/i);
-                    if (match) {
-                        return match[0].replace(/-/g, ':');
-                    }
-                }
-                break;
-            case 'darwin':
-            case 'linux':
-                const macMatch = output.match(/([0-9a-f]{2}:){5}[0-9a-f]{2}/i);
-                if (macMatch) {
-                    return macMatch[0];
-                }
-                break;
-        }
-        throw new Error('Could not extract MAC address from system output');
+    
+    if (entry.count >= RATE_LIMIT) {
+        return false;
     }
+    
+    entry.count++;
+    return true;
+}
 
-    // Authenticate current machine
-    async authenticateCurrentMachine() {
-        try {
-            // Try to get MAC address using Node.js method first
-            let macResult = await this.getCurrentMacAddress();
-            
-            // If that fails, try system command
-            if (!macResult.success) {
-                macResult = await this.getMacAddressFromSystem();
-            }
-            
-            if (!macResult.success) {
-                return {
-                    authenticated: false,
-                    error: 'Could not retrieve MAC address',
-                    details: macResult.error
-                };
-            }
+// Security logging
+function logSecurityEvent(event, details, ip = 'unknown') {
+    const timestamp = new Date().toISOString();
+    console.log(`[SECURITY] ${timestamp} | IP: ${ip} | Event: ${event} | Details: ${details}`);
+}
 
-            const authResult = await this.db.authenticateMac(macResult.macAddress);
-            
-            return {
-                authenticated: authResult.authenticated,
-                macAddress: macResult.macAddress,
-                reason: authResult.reason || 'Authentication successful',
-                lastAccess: authResult.lastAccess,
-                accessCount: authResult.accessCount,
-                interface: macResult.interface,
-                method: macResult.method || 'nodejs_os'
-            };
-        } catch (error) {
-            return {
-                authenticated: false,
-                error: 'Authentication process failed',
-                details: error.message
-            };
-        }
+// Main API handler
+export default async function handler(req, res) {
+    const { method, query, body } = req;
+    const action = query.action;
+    const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+    
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    
+    if (method === 'OPTIONS') {
+        return res.status(200).end();
     }
-
-    // Authenticate specific MAC address
-    async authenticateMacAddress(macAddress) {
-        try {
-            const result = await this.db.authenticateMac(macAddress);
-            return result;
-        } catch (error) {
-            return {
-                authenticated: false,
-                error: 'Database error during authentication',
-                details: error.message
-            };
-        }
-    }
-
-    // Add current machine to authorized list
-    async authorizCurrentMachine(metadata = {}) {
-        try {
-            const macResult = await this.getCurrentMacAddress();
-            
-            if (!macResult.success) {
-                const systemMacResult = await this.getMacAddressFromSystem();
-                if (!systemMacResult.success) {
-                    return {
-                        success: false,
-                        error: 'Could not retrieve MAC address for authorization'
-                    };
-                }
-                macResult.macAddress = systemMacResult.macAddress;
-            }
-
-            const authMetadata = {
-                hostname: os.hostname(),
-                platform: this.platform,
-                userInfo: os.userInfo().username,
-                authorizedAt: new Date().toISOString(),
-                ...metadata
-            };
-
-            const result = await this.db.addMacAddress(macResult.macAddress, authMetadata);
-            
-            return {
-                ...result,
-                macAddress: macResult.macAddress,
-                metadata: authMetadata
-            };
-        } catch (error) {
-            return {
+    
+    try {
+        // Basic rate limiting
+        if (!checkRateLimit(clientIP)) {
+            logSecurityEvent('RATE_LIMIT_EXCEEDED', 'Too many requests', clientIP);
+            return res.status(429).json({
                 success: false,
-                error: 'Failed to authorize current machine',
-                details: error.message
-            };
-        }
-    }
-
-    // Add MAC address to authorized list
-    async authorizeMacAddress(macAddress, metadata = {}) {
-        try {
-            const result = await this.db.addMacAddress(macAddress, {
-                authorizedAt: new Date().toISOString(),
-                ...metadata
+                message: 'Too many requests. Please try again later.'
             });
-            return result;
-        } catch (error) {
-            return {
-                success: false,
-                error: 'Failed to authorize MAC address',
-                details: error.message
-            };
         }
-    }
-
-    // Remove MAC address from authorized list
-    async unauthorizeMacAddress(macAddress) {
-        try {
-            return await this.db.removeMacAddress(macAddress);
-        } catch (error) {
-            return {
-                success: false,
-                error: 'Failed to unauthorize MAC address',
-                details: error.message
-            };
-        }
-    }
-
-    // List all authorized MAC addresses
-    async listAuthorizedMacs(activeOnly = true) {
-        try {
-            const addresses = await this.db.listMacAddresses(activeOnly);
-            return {
-                success: true,
-                addresses: addresses.map(([mac, data]) => ({
-                    macAddress: mac,
-                    ...data
-                }))
-            };
-        } catch (error) {
-            return {
-                success: false,
-                error: 'Failed to list authorized MAC addresses',
-                details: error.message
-            };
-        }
-    }
-
-    // Get authentication statistics
-    async getAuthStats() {
-        try {
-            const stats = await this.db.getStats();
-            return { success: true, stats };
-        } catch (error) {
-            return {
-                success: false,
-                error: 'Failed to get authentication statistics',
-                details: error.message
-            };
-        }
-    }
-
-    // Enable/Disable MAC address
-    async toggleMacAddress(macAddress, enabled = true) {
-        try {
-            return await this.db.toggleMacAddress(macAddress, enabled);
-        } catch (error) {
-            return {
-                success: false,
-                error: `Failed to ${enabled ? 'enable' : 'disable'} MAC address`,
-                details: error.message
-            };
-        }
-    }
-
-    // Middleware for Express.js
-    authMiddleware() {
-        return async (req, res, next) => {
-            try {
-                const authResult = await this.authenticateCurrentMachine();
-                
-                if (authResult.authenticated) {
-                    req.macAuth = authResult;
-                    next();
-                } else {
-                    res.status(403).json({
-                        error: 'MAC Address Authentication Failed',
-                        message: authResult.reason || 'Unauthorized MAC address',
-                        macAddress: authResult.macAddress
-                    });
-                }
-            } catch (error) {
-                res.status(500).json({
-                    error: 'Authentication Error',
-                    message: 'Internal server error during MAC authentication'
+        
+        // Handle different actions
+        switch (action) {
+            case 'check-access':
+                return await handleCheckAccess(req, res, clientIP);
+            
+            case 'add-mac':
+                return await handleAddMAC(req, res, clientIP);
+            
+            case 'update-access':
+                return await handleUpdateAccess(req, res, clientIP);
+            
+            case 'remove-mac':
+                return await handleRemoveMAC(req, res, clientIP);
+            
+            case 'list-macs':
+                return await handleListMACs(req, res, clientIP);
+            
+            case 'bulk-add':
+                return await handleBulkAdd(req, res, clientIP);
+            
+            case 'get-logs':
+                return await handleGetLogs(req, res, clientIP);
+            
+            case 'maintenance':
+                return await handleMaintenance(req, res, clientIP);
+            
+            default:
+                logSecurityEvent('INVALID_ACTION', `Unknown action: ${action}`, clientIP);
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid action specified'
                 });
-            }
-        };
-    }
-
-    // CLI-style authentication check
-    async quickAuth() {
-        const result = await this.authenticateCurrentMachine();
-        
-        console.log('\n=== MAC Address Authentication ===');
-        console.log(`Status: ${result.authenticated ? '✅ AUTHORIZED' : '❌ UNAUTHORIZED'}`);
-        console.log(`MAC Address: ${result.macAddress || 'Unknown'}`);
-        console.log(`Reason: ${result.reason || result.error}`);
-        
-        if (result.authenticated) {
-            console.log(`Last Access: ${result.lastAccess || 'First access'}`);
-            console.log(`Access Count: ${result.accessCount || 0}`);
-            console.log(`Interface: ${result.interface || 'Unknown'}`);
         }
         
-        console.log('===================================\n');
+    } catch (error) {
+        console.error('API Error:', error);
+        logSecurityEvent('API_ERROR', error.message, clientIP);
         
-        return result;
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
     }
+}
 
-    // Backup database
-    async backupDatabase(backupPath) {
-        try {
-            return await this.db.backup(backupPath);
-        } catch (error) {
-            return {
+// Check MAC address access
+async function handleCheckAccess(req, res, clientIP) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ success: false, message: 'Method not allowed' });
+    }
+    
+    const { macAddresses, deviceInfo } = req.body;
+    
+    if (!macAddresses || !Array.isArray(macAddresses) || macAddresses.length === 0) {
+        logSecurityEvent('INVALID_REQUEST', 'Missing or invalid MAC addresses', clientIP);
+        return res.status(400).json({
+            success: false,
+            message: 'MAC addresses are required'
+        });
+    }
+    
+    if (!deviceInfo) {
+        logSecurityEvent('INVALID_REQUEST', 'Missing device info', clientIP);
+        return res.status(400).json({
+            success: false,
+            message: 'Device information is required'
+        });
+    }
+    
+    // Validate MAC addresses
+    for (const mac of macAddresses) {
+        if (!validateMACAddress(mac)) {
+            logSecurityEvent('INVALID_MAC', `Invalid MAC format: ${mac}`, clientIP);
+            return res.status(400).json({
                 success: false,
-                error: 'Failed to backup database',
-                details: error.message
-            };
+                message: `Invalid MAC address format: ${mac}`
+            });
         }
+    }
+    
+    // Add client IP to device info
+    deviceInfo.clientIP = clientIP;
+    
+    try {
+        const result = await macDB.checkAccess(macAddresses, deviceInfo);
+        
+        if (result.success) {
+            logSecurityEvent('ACCESS_GRANTED', `MAC: ${macAddresses[0]}, Device: ${deviceInfo.hostname}`, clientIP);
+        } else {
+            logSecurityEvent('ACCESS_DENIED', `MAC: ${macAddresses[0]}, Device: ${deviceInfo.hostname}`, clientIP);
+        }
+        
+        return res.status(200).json(result);
+        
+    } catch (error) {
+        logSecurityEvent('DATABASE_ERROR', error.message, clientIP);
+        return res.status(500).json({
+            success: false,
+            message: 'Database error occurred'
+        });
     }
 }
 
-// Export both the class and a default instance
-module.exports = MacAuth;
-module.exports.MacAuth = MacAuth;
-
-// If running directly, perform a quick authentication check
-if (require.main === module) {
-    const auth = new MacAuth();
-    auth.quickAuth().then(result => {
-        process.exit(result.authenticated ? 0 : 1);
-    });
+// Add MAC address to whitelist (Admin only)
+async function handleAddMAC(req, res, clientIP) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ success: false, message: 'Method not allowed' });
+    }
+    
+    const { macAddress, description, accessType = 'trial', adminKey } = req.body;
+    
+    // Admin authentication
+    const requiredAdminKey = process.env.ADMIN_SECRET_KEY || 'default-admin-key-change-me';
+    if (!verifyAdminKey(adminKey, requiredAdminKey)) {
+        logSecurityEvent('UNAUTHORIZED_ADMIN', 'Invalid admin key provided', clientIP);
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized: Invalid admin credentials'
+        });
+    }
+    
+    if (!macAddress || !description) {
+        return res.status(400).json({
+            success: false,
+            message: 'MAC address and description are required'
+        });
+    }
+    
+    if (!validateMACAddress(macAddress)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid MAC address format'
+        });
+    }
+    
+    if (!['trial', 'unlimited', 'admin'].includes(accessType)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid access type. Must be: trial, unlimited, or admin'
+        });
+    }
+    
+    try {
+        const result = await macDB.addMACAddress(macAddress, description, accessType);
+        
+        if (result.success) {
+            logSecurityEvent('MAC_ADDED', `MAC: ${macAddress}, Type: ${accessType}, Desc: ${description}`, clientIP);
+        }
+        
+        return res.status(result.success ? 200 : 400).json(result);
+        
+    } catch (error) {
+        logSecurityEvent('DATABASE_ERROR', error.message, clientIP);
+        return res.status(500).json({
+            success: false,
+            message: 'Database error occurred'
+        });
+    }
 }
+
+// Update MAC address access type (Admin only)
+async function handleUpdateAccess(req, res, clientIP) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ success: false, message: 'Method not allowed' });
+    }
+    
+    const { macAddress, accessType, adminKey } = req.body;
+    
+    // Admin authentication
+    const requiredAdminKey = process.env.ADMIN_SECRET_KEY || 'default-admin-key-change-me';
+    if (!verifyAdminKey(adminKey, requiredAdminKey)) {
+        logSecurityEvent('UNAUTHORIZED_ADMIN', 'Invalid admin key for update', clientIP);
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized: Invalid admin credentials'
+        });
+    }
+    
+    if (!macAddress || !accessType) {
+        return res.status(400).json({
+            success: false,
+            message: 'MAC address and access type are required'
+        });
+    }
+    
+    if (!validateMACAddress(macAddress)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid MAC address format'
+        });
+    }
+    
+    if (!['trial', 'unlimited', 'admin'].includes(accessType)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid access type. Must be: trial, unlimited, or admin'
+        });
+    }
+    
+    try {
+        const result = await macDB.updateMACAccess(macAddress, accessType);
+        
+        if (result.success) {
+            logSecurityEvent('MAC_UPDATED', `MAC: ${macAddress}, New Type: ${accessType}`, clientIP);
+        }
+        
+        return res.status(result.success ? 200 : 400).json(result);
+        
+    } catch (error) {
+        logSecurityEvent
