@@ -8,10 +8,10 @@
     "start": "node sat-launcher-mac.js",
     "admin": "node sat-launcher-mac.js admin",
     "dev": "NODE_ENV=development node sat-launcher-mac.js",
-    "build": "echo 'No build step required'",
+    "build": "echo \"No build step required\"",
     "maintenance": "node scripts/db-maintenance.js",
     "backup": "node scripts/db-backup.js",
-    "test": "echo 'Tests not implemented yet'"
+    "test": "echo \"Tests not implemented yet\""
   },
   "keywords": [
     "sat",
@@ -26,7 +26,7 @@
     "@google/generative-ai": "^0.15.0",
     "fs-extra": "^11.2.0",
     "https": "^1.0.0",
-    "node-global-key-listener": "^0.1.2",
+    "node-global-key-listener": "^0.3.0",  // Updated per npm registry
     "robotjs": "^0.6.0"
   },
   "devDependencies": {
