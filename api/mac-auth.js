@@ -1,29 +1,40 @@
-// api/mac-auth.js - Vercel serverless function with persistent storage
-import { kv } from '@vercel/kv';
+// api/mac-auth.js - Vercel serverless function with Supabase PostgreSQL
+import { createClient } from '@supabase/supabase-js';
+
+// Supabase configuration (from environment variables)
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('Missing Supabase environment variables');
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // Configuration
 const ADMIN_SECRET_KEYS = ['122316']; // Your admin key(s)
-const MAC_DATA_KEY = 'mac_whitelist_v2'; // Key for storing MAC data in Vercel KV
 
-// Helper function to get all MAC addresses from persistent storage
-async function getAllMacAddresses() {
+// Helper function to initialize database table if it doesn't exist
+async function initializeDatabase() {
     try {
-        const macData = await kv.get(MAC_DATA_KEY);
-        return macData || {};
+        // Create table if it doesn't exist
+        const { error } = await supabase.rpc('create_mac_table_if_not_exists');
+        
+        // If RPC doesn't work, try direct SQL (this will only work with service role key)
+        if (error) {
+            const { error: createError } = await supabase
+                .from('mac_whitelist')
+                .select('*')
+                .limit(1);
+            
+            // If table doesn't exist, we'll get a specific error
+            if (createError && createError.message.includes('relation "mac_whitelist" does not exist')) {
+                console.log('Creating mac_whitelist table...');
+                // Note: This requires database admin access - we'll handle this in setup
+            }
+        }
     } catch (error) {
-        console.error('Error getting MAC data:', error);
-        return {};
-    }
-}
-
-// Helper function to save all MAC addresses to persistent storage
-async function saveAllMacAddresses(macData) {
-    try {
-        await kv.set(MAC_DATA_KEY, macData);
-        return true;
-    } catch (error) {
-        console.error('Error saving MAC data:', error);
-        return false;
+        console.error('Database initialization error:', error);
     }
 }
 
@@ -47,6 +58,9 @@ export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
         return res.status(200).json({});
     }
+
+    // Initialize database on first request
+    await initializeDatabase();
 
     const { action } = req.query;
     
@@ -91,36 +105,50 @@ async function handleCheckAccess(req, res) {
         });
     }
     
-    const allMacs = await getAllMacAddresses();
-    
     // Check if any of the provided MAC addresses are authorized
-    for (const mac of macAddresses) {
-        const normalizedMac = mac.toLowerCase();
-        if (allMacs[normalizedMac]) {
-            const macData = allMacs[normalizedMac];
-            
-            // Update last seen and access count
-            macData.lastSeen = new Date().toISOString();
-            macData.accessCount = (macData.accessCount || 0) + 1;
-            macData.lastDevice = deviceInfo;
-            
-            // Save updated data
-            allMacs[normalizedMac] = macData;
-            await saveAllMacAddresses(allMacs);
-            
-            return res.status(200).json({
-                success: true,
-                message: 'Device authorized',
-                data: {
-                    macAddress: normalizedMac,
-                    description: macData.description,
-                    accessType: macData.accessType || 'trial', // FIXED: Always return accessType
-                    addedAt: macData.addedAt,
-                    lastSeen: macData.lastSeen,
-                    accessCount: macData.accessCount
-                }
-            });
+    const normalizedMacs = macAddresses.map(mac => mac.toLowerCase());
+    
+    const { data: macData, error } = await supabase
+        .from('mac_whitelist')
+        .select('*')
+        .in('mac_address', normalizedMacs)
+        .single();
+    
+    if (error && error.code !== 'PGRST116') {
+        console.error('Database error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Database error occurred'
+        });
+    }
+    
+    if (macData) {
+        // Update last seen and access count
+        const { error: updateError } = await supabase
+            .from('mac_whitelist')
+            .update({
+                last_seen: new Date().toISOString(),
+                access_count: (macData.access_count || 0) + 1,
+                last_device: deviceInfo
+            })
+            .eq('mac_address', macData.mac_address);
+        
+        if (updateError) {
+            console.error('Update error:', updateError);
         }
+        
+        return res.status(200).json({
+            success: true,
+            message: 'Device authorized',
+            data: {
+                macAddress: macData.mac_address,
+                description: macData.description,
+                accessType: macData.access_type || 'trial', // FIXED: Always return accessType
+                addedAt: macData.added_at,
+                lastSeen: new Date().toISOString(),
+                accessCount: (macData.access_count || 0) + 1
+            }
+        });
     }
     
     return res.status(403).json({
@@ -159,32 +187,44 @@ async function handleAddMac(req, res) {
     }
     
     const normalizedMac = macAddress.toLowerCase();
-    const allMacs = await getAllMacAddresses();
     
-    if (allMacs[normalizedMac]) {
+    // Check if MAC already exists
+    const { data: existing } = await supabase
+        .from('mac_whitelist')
+        .select('mac_address')
+        .eq('mac_address', normalizedMac)
+        .single();
+    
+    if (existing) {
         return res.status(409).json({
             success: false,
             message: 'MAC address already exists in whitelist'
         });
     }
     
-    // Add new MAC address with all required fields
-    allMacs[normalizedMac] = {
-        macAddress: normalizedMac,
-        description: description || 'No description',
-        accessType: accessType, // FIXED: Store the access type
-        addedAt: new Date().toISOString(),
-        accessCount: 0,
-        lastSeen: null,
-        lastDevice: null
-    };
+    // Insert new MAC address
+    const { data, error } = await supabase
+        .from('mac_whitelist')
+        .insert([
+            {
+                mac_address: normalizedMac,
+                description: description || 'No description',
+                access_type: accessType, // FIXED: Store the access type
+                added_at: new Date().toISOString(),
+                access_count: 0,
+                last_seen: null,
+                last_device: null
+            }
+        ])
+        .select()
+        .single();
     
-    const saved = await saveAllMacAddresses(allMacs);
-    
-    if (!saved) {
+    if (error) {
+        console.error('Insert error:', error);
         return res.status(500).json({
             success: false,
-            message: 'Failed to save MAC address to database'
+            message: 'Failed to save MAC address to database',
+            error: error.message
         });
     }
     
@@ -195,7 +235,7 @@ async function handleAddMac(req, res) {
             macAddress: normalizedMac,
             description: description,
             accessType: accessType,
-            addedAt: allMacs[normalizedMac].addedAt
+            addedAt: data.added_at
         }
     });
 }
@@ -226,22 +266,26 @@ async function handleUpdateAccess(req, res) {
     }
     
     const normalizedMac = macAddress.toLowerCase();
-    const allMacs = await getAllMacAddresses();
     
-    if (!allMacs[normalizedMac]) {
-        return res.status(404).json({
-            success: false,
-            message: 'MAC address not found in whitelist'
-        });
-    }
+    const { data, error } = await supabase
+        .from('mac_whitelist')
+        .update({
+            access_type: accessType,
+            updated_at: new Date().toISOString()
+        })
+        .eq('mac_address', normalizedMac)
+        .select()
+        .single();
     
-    // Update the access type
-    allMacs[normalizedMac].accessType = accessType;
-    allMacs[normalizedMac].updatedAt = new Date().toISOString();
-    
-    const saved = await saveAllMacAddresses(allMacs);
-    
-    if (!saved) {
+    if (error) {
+        if (error.code === 'PGRST116') {
+            return res.status(404).json({
+                success: false,
+                message: 'MAC address not found in whitelist'
+            });
+        }
+        
+        console.error('Update error:', error);
         return res.status(500).json({
             success: false,
             message: 'Failed to update MAC address in database'
@@ -254,7 +298,7 @@ async function handleUpdateAccess(req, res) {
         data: {
             macAddress: normalizedMac,
             accessType: accessType,
-            updatedAt: allMacs[normalizedMac].updatedAt
+            updatedAt: data.updated_at
         }
     });
 }
@@ -278,20 +322,14 @@ async function handleRemoveMac(req, res) {
     }
     
     const normalizedMac = macAddress.toLowerCase();
-    const allMacs = await getAllMacAddresses();
     
-    if (!allMacs[normalizedMac]) {
-        return res.status(404).json({
-            success: false,
-            message: 'MAC address not found in whitelist'
-        });
-    }
+    const { error } = await supabase
+        .from('mac_whitelist')
+        .delete()
+        .eq('mac_address', normalizedMac);
     
-    delete allMacs[normalizedMac];
-    
-    const saved = await saveAllMacAddresses(allMacs);
-    
-    if (!saved) {
+    if (error) {
+        console.error('Delete error:', error);
         return res.status(500).json({
             success: false,
             message: 'Failed to remove MAC address from database'
@@ -315,8 +353,18 @@ async function handleListMacs(req, res) {
         });
     }
     
-    const allMacs = await getAllMacAddresses();
-    const macList = Object.values(allMacs);
+    const { data: macList, error } = await supabase
+        .from('mac_whitelist')
+        .select('*')
+        .order('added_at', { ascending: false });
+    
+    if (error) {
+        console.error('List error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve MAC addresses from database'
+        });
+    }
     
     // Calculate statistics
     const now = new Date();
@@ -325,22 +373,33 @@ async function handleListMacs(req, res) {
     
     const statistics = {
         total: macList.length,
-        activeLast24h: macList.filter(mac => mac.lastSeen && new Date(mac.lastSeen) > yesterday).length,
-        activeLast7d: macList.filter(mac => mac.lastSeen && new Date(mac.lastSeen) > weekAgo).length,
-        neverUsed: macList.filter(mac => !mac.lastSeen).length,
-        totalAccesses: macList.reduce((sum, mac) => sum + (mac.accessCount || 0), 0),
+        activeLast24h: macList.filter(mac => mac.last_seen && new Date(mac.last_seen) > yesterday).length,
+        activeLast7d: macList.filter(mac => mac.last_seen && new Date(mac.last_seen) > weekAgo).length,
+        neverUsed: macList.filter(mac => !mac.last_seen).length,
+        totalAccesses: macList.reduce((sum, mac) => sum + (mac.access_count || 0), 0),
         byAccessType: {
-            trial: macList.filter(mac => (mac.accessType || 'trial') === 'trial').length,
-            unlimited: macList.filter(mac => (mac.accessType || 'trial') === 'unlimited').length,
-            admin: macList.filter(mac => (mac.accessType || 'trial') === 'admin').length
+            trial: macList.filter(mac => (mac.access_type || 'trial') === 'trial').length,
+            unlimited: macList.filter(mac => (mac.access_type || 'trial') === 'unlimited').length,
+            admin: macList.filter(mac => (mac.access_type || 'trial') === 'admin').length
         }
     };
+    
+    // Convert database format to expected format
+    const formattedMacList = macList.map(mac => ({
+        macAddress: mac.mac_address,
+        description: mac.description,
+        accessType: mac.access_type || 'trial',
+        addedAt: mac.added_at,
+        lastSeen: mac.last_seen,
+        accessCount: mac.access_count || 0,
+        lastDevice: mac.last_device
+    }));
     
     return res.status(200).json({
         success: true,
         message: 'MAC addresses retrieved successfully',
         data: {
-            macAddresses: macList,
+            macAddresses: formattedMacList,
             statistics: statistics
         }
     });
@@ -364,10 +423,11 @@ async function handleBulkAdd(req, res) {
         });
     }
     
-    const allMacs = await getAllMacAddresses();
     const results = [];
+    const validMacs = [];
     let successCount = 0;
     
+    // Validate all MAC addresses first
     for (const macData of macAddresses) {
         const { macAddress, description, accessType = 'trial' } = macData;
         
@@ -382,24 +442,15 @@ async function handleBulkAdd(req, res) {
         
         const normalizedMac = macAddress.toLowerCase();
         
-        if (allMacs[normalizedMac]) {
-            results.push({
-                macAddress: normalizedMac,
-                success: false,
-                message: 'Already exists'
-            });
-            continue;
-        }
-        
-        allMacs[normalizedMac] = {
-            macAddress: normalizedMac,
+        validMacs.push({
+            mac_address: normalizedMac,
             description: description || 'Bulk added',
-            accessType: accessType,
-            addedAt: new Date().toISOString(),
-            accessCount: 0,
-            lastSeen: null,
-            lastDevice: null
-        };
+            access_type: accessType,
+            added_at: new Date().toISOString(),
+            access_count: 0,
+            last_seen: null,
+            last_device: null
+        });
         
         results.push({
             macAddress: normalizedMac,
@@ -410,13 +461,20 @@ async function handleBulkAdd(req, res) {
         successCount++;
     }
     
-    const saved = await saveAllMacAddresses(allMacs);
-    
-    if (!saved) {
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to save MAC addresses to database'
-        });
+    // Bulk insert valid MAC addresses
+    if (validMacs.length > 0) {
+        const { error } = await supabase
+            .from('mac_whitelist')
+            .insert(validMacs);
+        
+        if (error) {
+            console.error('Bulk insert error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to save MAC addresses to database',
+                error: error.message
+            });
+        }
     }
     
     return res.status(200).json({
