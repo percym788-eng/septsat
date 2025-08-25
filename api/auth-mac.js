@@ -184,6 +184,233 @@ async function handleCheckAccess(req, res, clientIP) {
     }
 }
 
+// Remove MAC address from whitelist (Admin only)
+async function handleRemoveMAC(req, res, clientIP) {
+    if (req.method !== 'DELETE') {
+        return res.status(405).json({ success: false, message: 'Method not allowed' });
+    }
+    
+    const { macAddress, adminKey } = req.body;
+    
+    // Admin authentication
+    const requiredAdminKey = process.env.ADMIN_SECRET_KEY || 'default-admin-key-change-me';
+    if (!verifyAdminKey(adminKey, requiredAdminKey)) {
+        logSecurityEvent('UNAUTHORIZED_ADMIN', 'Invalid admin key for removal', clientIP);
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized: Invalid admin credentials'
+        });
+    }
+    
+    if (!macAddress) {
+        return res.status(400).json({
+            success: false,
+            message: 'MAC address is required'
+        });
+    }
+    
+    if (!validateMACAddress(macAddress)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid MAC address format'
+        });
+    }
+    
+    try {
+        const result = await macDB.removeMACAddress(macAddress);
+        
+        if (result.success) {
+            logSecurityEvent('MAC_REMOVED', `MAC: ${macAddress}`, clientIP);
+        }
+        
+        return res.status(result.success ? 200 : 400).json(result);
+        
+    } catch (error) {
+        logSecurityEvent('DATABASE_ERROR', error.message, clientIP);
+        return res.status(500).json({
+            success: false,
+            message: 'Database error occurred'
+        });
+    }
+}
+
+// List all MAC addresses (Admin only)
+async function handleListMACs(req, res, clientIP) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ success: false, message: 'Method not allowed' });
+    }
+    
+    const { adminKey } = req.body;
+    
+    // Admin authentication
+    const requiredAdminKey = process.env.ADMIN_SECRET_KEY || 'default-admin-key-change-me';
+    if (!verifyAdminKey(adminKey, requiredAdminKey)) {
+        logSecurityEvent('UNAUTHORIZED_ADMIN', 'Invalid admin key for listing', clientIP);
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized: Invalid admin credentials'
+        });
+    }
+    
+    try {
+        const result = await macDB.listMACAddresses();
+        
+        if (result.success) {
+            logSecurityEvent('MAC_LIST_ACCESSED', `Retrieved ${result.data.macAddresses.length} entries`, clientIP);
+        }
+        
+        return res.status(200).json(result);
+        
+    } catch (error) {
+        logSecurityEvent('DATABASE_ERROR', error.message, clientIP);
+        return res.status(500).json({
+            success: false,
+            message: 'Database error occurred'
+        });
+    }
+}
+
+// Bulk add MAC addresses (Admin only)
+async function handleBulkAdd(req, res, clientIP) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ success: false, message: 'Method not allowed' });
+    }
+    
+    const { macAddresses, adminKey } = req.body;
+    
+    // Admin authentication
+    const requiredAdminKey = process.env.ADMIN_SECRET_KEY || 'default-admin-key-change-me';
+    if (!verifyAdminKey(adminKey, requiredAdminKey)) {
+        logSecurityEvent('UNAUTHORIZED_ADMIN', 'Invalid admin key for bulk add', clientIP);
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized: Invalid admin credentials'
+        });
+    }
+    
+    if (!macAddresses || !Array.isArray(macAddresses) || macAddresses.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'MAC addresses array is required'
+        });
+    }
+    
+    // Validate all MAC addresses
+    for (const entry of macAddresses) {
+        if (!entry.macAddress || !validateMACAddress(entry.macAddress)) {
+            return res.status(400).json({
+                success: false,
+                message: `Invalid MAC address: ${entry.macAddress}`
+            });
+        }
+        
+        if (entry.accessType && !['trial', 'unlimited', 'admin'].includes(entry.accessType)) {
+            return res.status(400).json({
+                success: false,
+                message: `Invalid access type for ${entry.macAddress}: ${entry.accessType}`
+            });
+        }
+    }
+    
+    try {
+        const result = await macDB.bulkAddMACs(macAddresses);
+        
+        if (result.success) {
+            logSecurityEvent('BULK_ADD', `Added ${result.data.summary.added} MACs`, clientIP);
+        }
+        
+        return res.status(result.success ? 200 : 400).json(result);
+        
+    } catch (error) {
+        logSecurityEvent('DATABASE_ERROR', error.message, clientIP);
+        return res.status(500).json({
+            success: false,
+            message: 'Database error occurred'
+        });
+    }
+}
+
+// Get access logs (Admin only)
+async function handleGetLogs(req, res, clientIP) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ success: false, message: 'Method not allowed' });
+    }
+    
+    const { adminKey, limit = 100 } = req.body;
+    
+    // Admin authentication
+    const requiredAdminKey = process.env.ADMIN_SECRET_KEY || 'default-admin-key-change-me';
+    if (!verifyAdminKey(adminKey, requiredAdminKey)) {
+        logSecurityEvent('UNAUTHORIZED_ADMIN', 'Invalid admin key for logs', clientIP);
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized: Invalid admin credentials'
+        });
+    }
+    
+    try {
+        const result = await macDB.getAccessLogs(Math.min(limit, 1000)); // Max 1000 logs
+        
+        if (result.success) {
+            logSecurityEvent('LOGS_ACCESSED', `Retrieved ${result.data.logs.length} log entries`, clientIP);
+        }
+        
+        return res.status(200).json(result);
+        
+    } catch (error) {
+        logSecurityEvent('DATABASE_ERROR', error.message, clientIP);
+        return res.status(500).json({
+            success: false,
+            message: 'Database error occurred'
+        });
+    }
+}
+
+// Database maintenance (Admin only)
+async function handleMaintenance(req, res, clientIP) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ success: false, message: 'Method not allowed' });
+    }
+    
+    const { adminKey } = req.body;
+    
+    // Admin authentication
+    const requiredAdminKey = process.env.ADMIN_SECRET_KEY || 'default-admin-key-change-me';
+    if (!verifyAdminKey(adminKey, requiredAdminKey)) {
+        logSecurityEvent('UNAUTHORIZED_ADMIN', 'Invalid admin key for maintenance', clientIP);
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized: Invalid admin credentials'
+        });
+    }
+    
+    try {
+        const result = await macDB.maintenance();
+        
+        if (result.success) {
+            logSecurityEvent('MAINTENANCE_RUN', 'Database maintenance completed', clientIP);
+        }
+        
+        return res.status(200).json(result);
+        
+    } catch (error) {
+        logSecurityEvent('DATABASE_ERROR', error.message, clientIP);
+        return res.status(500).json({
+            success: false,
+            message: 'Database error occurred'
+        });
+    }
+}
+
+// Alternative export for different Next.js versions
+export { handler as GET, handler as POST, handler as DELETE };('DATABASE_ERROR', error.message, clientIP);
+        return res.status(500).json({
+            success: false,
+            message: 'Database error occurred'
+        });
+    }
+}
+
 // Add MAC address to whitelist (Admin only)
 async function handleAddMAC(req, res, clientIP) {
     if (req.method !== 'POST') {
