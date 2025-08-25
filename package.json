@@ -1,18 +1,30 @@
 {
-  "name": "sat-helper-mac-auth",
-  "version": "1.0.0",
-  "description": "SAT Helper with MAC Address Authentication",
+  "name": "septsat-server",
+  "version": "2.0.0",
+  "description": "SAT Helper MAC Authentication Server with Supabase PostgreSQL",
+  "main": "api/mac-auth.js",
   "type": "module",
-  "main": "sat-launcher-mac.js",
   "scripts": {
-    "start": "node sat-launcher-mac.js",
-    "admin": "node sat-launcher-mac.js admin",
-    "setup": "node scripts/setup-admin.js"
+    "dev": "vercel dev",
+    "build": "echo 'No build step required'",
+    "start": "echo 'Use vercel dev for local development'"
   },
   "dependencies": {
-    "@vercel/kv": "^1.0.0"
+    "@supabase/supabase-js": "^2.39.0"
+  },
+  "devDependencies": {
+    "vercel": "^32.0.0"
   },
   "engines": {
-    "node": ">=16.0.0"
-  }
+    "node": ">=18.0.0"
+  },
+  "author": "percym788-eng",
+  "license": "MIT",
+  "keywords": [
+    "sat-helper",
+    "mac-authentication",
+    "vercel",
+    "serverless",
+    "supabase"
+  ]
 }
