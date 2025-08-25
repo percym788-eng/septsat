@@ -1,22 +1,6 @@
 {
   "version": 2,
   "name": "septsat-database",
-  "builds": [
-    {
-      "src": "pages/api/**/*.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/mac-auth",
-      "dest": "/api/mac-auth.js"
-    }
-  ],
   "functions": {
     "pages/api/**/*.js": {
       "maxDuration": 30
@@ -25,6 +9,12 @@
       "maxDuration": 30
     }
   },
+  "routes": [
+    {
+      "src": "/api/mac-auth",
+      "dest": "/api/mac-auth.js"
+    }
+  ],
   "env": {
     "NODE_ENV": "production",
     "ADMIN_SECRET_KEY": "@admin-secret-key",
